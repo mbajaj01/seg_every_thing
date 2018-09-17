@@ -62,7 +62,10 @@ def im_detect_all(model, im, box_proposals, timers=None):
     if cfg.TEST.BBOX_AUG.ENABLED:
         scores, boxes, im_scale = im_detect_bbox_aug(model, im, box_proposals)
     else:
-        scores, boxes, im_scale = im_detect_bbox(
+#         scores, boxes, im_scale = im_detect_bbox(
+#             model, im, cfg.TEST.SCALE, cfg.TEST.MAX_SIZE, boxes=box_proposals
+#         )
+        scores, boxes, rois, im_scale, fc7_feats, roi_feats, im_info = im_detect_bbox(
             model, im, cfg.TEST.SCALE, cfg.TEST.MAX_SIZE, boxes=box_proposals
         )
     timers['im_detect_bbox'].toc()
@@ -71,9 +74,33 @@ def im_detect_all(model, im, box_proposals, timers=None):
     # (they are not separated by class)
     # cls_boxes boxes and scores are separated by class and in the format used
     # for evaluating results
+    
+    ##Edited by mohit
+    raw_boxes = boxes
+    raw_scores = scores
     timers['misc_bbox'].tic()
     scores, boxes, cls_boxes = box_results_with_nms_and_limit(scores, boxes)
+    rpn_size = raw_scores.shape[0]
+    ans_boxes = np.zeros((rpn_size,4))
+    ans_scores = np.zeros((rpn_size,3))
+    #choosing the class with max score, also saving background score
+    for bi in range(rpn_size):
+        box_num = bi
+        j=np.argmax(raw_scores[box_num,1:])
+        j=j+1
+        box = raw_boxes[box_num,j * 4:(j + 1) * 4]
+        ans_boxes[box_num,:] = box
+        ans_scores[box_num,0] = j
+        ans_scores[box_num,1] = np.max(raw_scores[box_num,1:])
+        ans_scores[box_num,2] = raw_scores[box_num,0] #Bckground score
+        
+    ans_cls_boxes = {}
+    for ci in range(len(cls_boxes)):
+        if len(cls_boxes[ci]) > 0:
+            ans_cls_boxes[ci] = cls_boxes[ci]
     timers['misc_bbox'].toc()
+    return ans_scores, ans_boxes, ans_cls_boxes, im_scale, fc7_feats, im_info
+    #edit end
 
     if cfg.MODEL.MASK_ON and boxes.shape[0] > 0:
         timers['im_detect_mask'].tic()
@@ -190,8 +217,14 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
         # Map scores and predictions back to the original set of boxes
         scores = scores[inv_index, :]
         pred_boxes = pred_boxes[inv_index, :]
+        
+    fc7_feats = workspace.FetchBlob(core.ScopedName('fc7'))
+    roi_feats = workspace.FetchBlob(core.ScopedName('roi_feat'))
+    rois = workspace.FetchBlob(core.ScopedName('rois'))
+    im_info = workspace.FetchBlob(core.ScopedName('im_info'))
+    return scores, pred_boxes, rois, im_scale, fc7_feats, roi_feats, im_info
 
-    return scores, pred_boxes, im_scale
+    #return scores, pred_boxes, im_scale
 
 
 def im_detect_bbox_aug(model, im, box_proposals=None):

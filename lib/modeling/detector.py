@@ -135,7 +135,8 @@ class DetectionModelHelper(cnn.CNNModelHelper):
         self.net.Python(
             GenerateProposalsOp(anchors, spatial_scale, self.train).forward
         )(blobs_in, blobs_out, name=name, spatial_scale=spatial_scale)
-        return blobs_out
+        print("proposals_generated!!!")
+	return blobs_out
 
     def GenerateProposalLabels(self, blobs_in):
         """Op for generating training labels for RPN proposals. This is used
